@@ -1,0 +1,41 @@
+name: CI Container Build and Release
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'CMake_CI_Build/**'
+  
+jobs:
+
+  build:
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v7
+    
+    - name: Get short commit hash
+      run  : echo "SHORT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+      
+    - name: Login to GitHub Container Registry
+      uses: docker/login-action@v4
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Build container image
+      working-directory: ./CMake_CI_Build
+      run: docker build . -f Containerfile -t ghcr.io/mcgill-robotics/rover-embedded-runner:latest -t ghcr.io/mcgill-robotics/rover-embedded-runner:$SHORT_SHA
+
+    - name: Push container image as latest
+      run: docker push ghcr.io/mcgill-robotics/rover-embedded-runner:latest
+
+    - name : Push container image as sha
+      run: docker push ghcr.io/mcgill-robotics/rover-embedded-runner:$SHORT_SHA

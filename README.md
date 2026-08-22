@@ -1,2 +1,3 @@
 # rover-elec-containers
-Containers for automation
+
+This repo contains the source for containers and scripts we use to help automate organization of the main rover-embedded repository.

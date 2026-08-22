@@ -1,0 +1,35 @@
+FROM docker.io/ubuntu:26.04
+
+# Update this when changing the repo for the new year
+LABEL org.opencontainers.image.source=https://github.com/mcgill-robotics/rover-embedded-automation
+LABEL org.opencontainers.image.description="Build environment for CMake projects"
+
+# Install scripting tools, compilers and toolchains for building
+# our embedded projects and other tooling
+# these tools are added so they can be invoked by cmake 
+# during configuration/build
+RUN apt-get update && apt-get install -y \
+	python3 \
+	cmake \
+	gcc-arm-none-eabi \
+	gcc \ 
+	g++ \
+	git \
+	ninja-build \
+	wget \
+	curl \
+	make \
+	bash \
+	libnewlib-dev
+
+RUN mkdir -p /home/ci-runner
+
+COPY build.sh /home/ci-runner/build.sh
+
+RUN chmod +x /home/ci-runner/build.sh
+
+VOLUME ["/home/ci-runner/project"]
+
+WORKDIR /home/ci-runner/project
+
+ENTRYPOINT [ "../build.sh" ]

@@ -1,7 +1,6 @@
 {
 	"paths":[],
 	"patterns":[
-		"**/Drivers/CMSIS/**",
-		"**/comms/**"
+		"**/Drivers/CMSIS/**"
 	]
 }

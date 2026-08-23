@@ -16,13 +16,13 @@ if len(sys.argv) < 3:
 	sys.exit(1)
 
 dir_to_search = pathlib.Path(sys.argv[1].strip())
-container_image = sys.argv[2]
+oci_runtime = sys.argv[2]
+container_image = sys.argv[3]
 denylist_file = None
 process_submodules = False
-
-if len(sys.argv) == 4:
-	denylist_file = sys.argv[3]
-if len(sys.argv) == 5 and sys.argv[4] == "--process-submodules":
+if len(sys.argv) == 5:
+	denylist_file = sys.argv[4]
+if len(sys.argv) == 6 and sys.argv[5] == "--process-submodules":
 	process_submodules = True
 
 def get_submodules(current_dir:Path|str) -> list[Path]:
@@ -132,7 +132,7 @@ cmake_projects_count = len(cmake_projects)
 print(f"Found {cmake_projects_count} projects:")
 for path in cmake_projects:
 	print(path)
-exit()
+
 print()
 print(f"Executing {cmake_projects_count} builds")
 print()
@@ -150,9 +150,6 @@ for project_path in cmake_projects:
 	print("-"*75)
 	print()
 
-	oci_runtime = "podman"
-	if shutil.which("podman") is None:
-		oci_runtime = "docker"
 	command = [
 		oci_runtime, "run", "--rm",
 		"-v", f"{repo_path}:/home/ci-runner/project:z", container_image, 

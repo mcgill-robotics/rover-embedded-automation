@@ -1,3 +1,5 @@
+# Requires Python 3.13+
+
 import glob
 import json
 import pathlib
@@ -52,38 +54,61 @@ def get_submodules(current_dir:Path|str) -> list[Path]:
 		print("Could not get submodules, git was not found", file=sys.stderr)
 	return []
 
-def read_denylist(file_path:str|None) -> set[Path]:
+def read_denylist(file_path:str|None) -> tuple[set[Path], set[str]]:
 	if file_path is None:
-		return set()
+		return set(), set()
+	
+	denylisted_paths = set()
+	denylisted_patterns = set()
+
 	denylist_file_path = Path(file_path)
 	if denylist_file_path.exists():
 		with open(file_path, "r") as denylist_file_handle:
 			data = json.load(denylist_file_handle)
-			denylisted_paths = set()
+		
 			if "paths" in data:
 				for entry in data["paths"]:
 					if type(entry) is not str:
 						print(f"Bad entry of type {type(entry)} was found: {entry}", file=sys.stderr)
 					else:
 						denylisted_paths.add(pathlib.Path(entry).resolve())
-				return denylisted_paths
 			else:
 				print("Bad blocklist file, skipping denylist", file=sys.stderr)
+			if "patterns" in data:
+				for entry in data["patterns"]:
+					if type(entry) is not str:
+						print(f"Bad entry of type {type(entry)} was found: {entry}", file=sys.stderr)
+					else:
+						denylisted_patterns.add(entry)
+			else:
+				print("Bad blocklist file, skipping denylist", file=sys.stderr)
+			
 	else:
 		print("Blocklist file does not exist, skipping denylist", file=sys.stderr)
-	return set()
 
-def find_mx_projects(repo_path:pathlib.Path, denylist:set[Path]) -> list[pathlib.Path]:
+	return denylisted_paths, denylisted_patterns
+
+def find_mx_projects(repo_path:pathlib.Path, denylist:set[Path], denied_patterns:set[str]) -> list[pathlib.Path]:
 	projects = []
 	res = glob.glob("**/**.ioc", root_dir=repo_path, recursive=True)
 	for path in res:
 		file_path = pathlib.Path(path)
+		allowed = True
+		resolved_path = repo_path.joinpath(file_path).resolve()
 		for denylisted in denylist:
 			# denylisted always resolved before
 			# join to repo_path to resolve correctly
-			if denylisted in repo_path.joinpath(file_path).resolve().parents:
+			if denylisted in resolved_path.parents:
+				allowed = False
 				break
-		else:
+			
+
+		for pattern in denied_patterns:
+			if resolved_path.full_match(pattern):
+				allowed = False
+				break
+		
+		if allowed:
 			projects.append(file_path.parent)
 	return projects
 
@@ -95,30 +120,41 @@ def is_cmake_project(path:pathlib.Path) -> bool:
 	return False
 			
 
-def find_cmake_projects(repo_path:pathlib.Path, denylist:set[Path]) -> list[pathlib.Path]:
+def find_cmake_projects(repo_path:pathlib.Path, denylist:set[Path], denied_patterns:set[str]) -> list[pathlib.Path]:
 	projects = []
 	res = glob.glob("**/CMakeLists.txt", root_dir=repo_path, recursive=True)
 	for path in res:
 		file_path = pathlib.Path(path)
 		if is_cmake_project(dir_to_search.joinpath(file_path)):
+			allowed = True
+			resolved_path = repo_path.joinpath(file_path).resolve()
 			for denylisted in denylist:
 				# denylisted always resolved before
 				# join to repo_path to resolve correctly
-				if denylisted in repo_path.joinpath(file_path).resolve().parents:
+				if denylisted in resolved_path.parents:
+					allowed = False
 					break
-			else:
+
+			for pattern in denied_patterns:
+				if resolved_path.full_match(pattern):
+					allowed = False
+					break
+			
+			if allowed:
 				projects.append(file_path.parent)
+
 	return projects
 
-denylist = read_denylist(denylist_file)
+denylist, denied_patterns = read_denylist(denylist_file)
 repo_path = dir_to_search.resolve()
 print(f"Scanning {repo_path}")
 submodules = get_submodules(repo_path)
 denylist.update(submodules)
 print(f"Detected {len(denylist)} directories to skip")
+print(f"Detected {len(denied_patterns)} patterns to skip")
 print() 
 print("Finding STM32CubeMX projects...")
-mx_projects = find_mx_projects(repo_path, denylist)
+mx_projects = find_mx_projects(repo_path, denylist, denied_patterns)
 print(f"Found {len(mx_projects)} projects:")
 mx_projects_resolved = {str(repo_path.joinpath(project_path).resolve()) for project_path in mx_projects}
 for path in mx_projects:
@@ -126,7 +162,7 @@ for path in mx_projects:
 
 print()
 print("Finding CMake projects...")
-cmake_projects = find_cmake_projects(repo_path, denylist)
+cmake_projects = find_cmake_projects(repo_path, denylist, denied_patterns)
 cmake_projects_resolved = {str(repo_path.joinpath(project_path).resolve()) for project_path in mx_projects}
 cmake_projects_count = len(cmake_projects)
 print(f"Found {cmake_projects_count} projects:")

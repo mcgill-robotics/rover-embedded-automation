@@ -1,13 +1,6 @@
-# CMake CI Build Runner
+# CMake Build Container
 
-Automation scripts and containers for running firmware and library builds in CI.
-
-## ProjectDiscovery.py
-
-This script discovers CMake projets in a directory recursively and builds them.
-Builds use gcc-arm-none-eabi for STM32CubeMX projects and standard gcc for libraries
-that are not generated using STM32CubeMX. If any build fails, it exits with a non-zero
-exit code. To use it, use `python ProjectDiscovery.py <directory>`
+Container for running firmware and library builds in CI.
 
 ## build.sh
 

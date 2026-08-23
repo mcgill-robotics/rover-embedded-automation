@@ -28,6 +28,9 @@ COPY build.sh /home/ci-runner/build.sh
 
 RUN chmod +x /home/ci-runner/build.sh
 
+# Needed to run git from container with a mounted repo
+RUN git config --global --add safe.directory /home/ci-runner/project
+
 VOLUME ["/home/ci-runner/project"]
 
 WORKDIR /home/ci-runner/project

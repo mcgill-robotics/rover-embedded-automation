@@ -1,47 +1,123 @@
 import glob
+import json
 import pathlib
-import subprocess
 import re
-import sys
+import shlex
 import shutil
+import subprocess
+import sys
+from pathlib import Path
 
 if len(sys.argv) < 2:
 	print("No directory to scan was provided")
-	exit(1)
+	sys.exit(1)
 if len(sys.argv) < 3:
 	print("No runner container image was provided")
-	exit(1)
+	sys.exit(1)
 
 dir_to_search = pathlib.Path(sys.argv[1])
 container_image = sys.argv[2]
-def find_mx_projects(repo_path:pathlib.Path) -> list[pathlib.Path]:
+denylist_file = None
+process_submodules = False
+
+if len(sys.argv) == 4:
+	denylist_file = sys.argv[3]
+if len(sys.argv) == 5 and sys.argv[4] == "--process-submodules":
+	process_submodules = True
+
+def get_submodules(current_dir:Path|str) -> list[Path]:
+	if shutil.which("git") is not None:
+		process = subprocess.run(["git", "submodule", "status", str(current_dir)], capture_output=True,check=False, text=True)
+		if process.returncode != 0:
+			print("Could not get submodules", file=sys.stderr)
+			print("Git Output:", file=sys.stderr)
+			print(process.stderr, file=sys.stderr)
+		else:
+			process_repo_path = subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True,check=False, text=True)
+			if process_repo_path.returncode != 0:
+				print("Could not get repo path", file=sys.stderr)
+				print("Git Output:", file=sys.stderr)
+				print(process_repo_path.stderr, file=sys.stderr)
+			else:
+				repo_path = pathlib.Path(process_repo_path.stdout).resolve()
+				submodule_paths = []
+				data = process.stdout
+				lines = data.splitlines()
+				for line in lines:
+					relative_path = shlex.split(line)[1]
+					absolute_path = repo_path.joinpath(pathlib.Path(relative_path))
+					submodule_paths.append(absolute_path)
+				return submodule_paths
+	else:
+		print("Could not get submodules, git was not found", file=sys.stderr)
+	return []
+
+def read_denylist(file_path:str|None) -> set[Path]:
+	if file_path is None:
+		return set()
+	denylist_file_path = Path(file_path)
+	if denylist_file_path.exists():
+		with open(file_path, "r") as denylist_file_handle:
+			data = json.load(denylist_file_handle)
+			denylisted_paths = set()
+			if "paths" in data:
+				for entry in data["paths"]:
+					if type(entry) is not str:
+						print(f"Bad entry of type {type(entry)} was found: {entry}", file=sys.stderr)
+					else:
+						denylisted_paths.add(pathlib.Path(entry).resolve())
+				return denylisted_paths
+			else:
+				print("Bad blocklist file, skipping denylist", file=sys.stderr)
+	else:
+		print("Blocklist file does not exist, skipping denylist", file=sys.stderr)
+	return set()
+
+def find_mx_projects(repo_path:pathlib.Path, denylist:set[Path]) -> list[pathlib.Path]:
 	projects = []
 	res = glob.glob("**/**.ioc", root_dir=repo_path, recursive=True)
 	for path in res:
-		projects.append(pathlib.Path(path).parent)
+		file_path = pathlib.Path(path)
+		for denylisted in denylist:
+			denied_path = pathlib.Path(denylisted)
+			# denied_paths always resolved before
+			if denied_path in file_path.resolve().parents:
+				break
+		else:
+			projects.append(file_path.parent)
 	return projects
 
 def is_cmake_project(path:pathlib.Path) -> bool:
 	with open(path, "r") as build_file:
-		for line in build_file.readlines():
+		for line in build_file:
 			if re.match(r"^project(.*)$", line) is not None:
 				return True
 	return False
 			
 
-def find_cmake_projects(repo_path:pathlib.Path) -> list[pathlib.Path]:
+def find_cmake_projects(repo_path:pathlib.Path, denylist:set[Path]) -> list[pathlib.Path]:
 	projects = []
 	res = glob.glob("**/CMakeLists.txt", root_dir=repo_path, recursive=True)
 	for path in res:
-		if is_cmake_project(dir_to_search.joinpath(pathlib.Path(path))):
-			projects.append(pathlib.Path(path).parent)
+		file_path = pathlib.Path(path)
+		if is_cmake_project(dir_to_search.joinpath(file_path)):
+			for denylisted in denylist:
+				denied_path = pathlib.Path(denylisted)
+				# denied_paths always resolved before
+				if denied_path in file_path.resolve().parents:
+					break
+			else:
+				projects.append(file_path.parent)
 	return projects
 
+denylist = read_denylist(denylist_file)
 repo_path = dir_to_search.resolve()
 print(f"Scanning {repo_path}")
+submodules = get_submodules(repo_path)
+denylist.update(submodules)
 print() 
 print("Finding STM32CubeMX projects...")
-mx_projects = find_mx_projects(repo_path)
+mx_projects = find_mx_projects(repo_path, denylist)
 print(f"Found {len(mx_projects)} projects:")
 mx_projects_resolved = {str(repo_path.joinpath(project_path).resolve()) for project_path in mx_projects}
 for path in mx_projects:
@@ -49,7 +125,7 @@ for path in mx_projects:
 
 print()
 print("Finding CMake projects...")
-cmake_projects = find_cmake_projects(repo_path)
+cmake_projects = find_cmake_projects(repo_path, denylist)
 cmake_projects_resolved = {str(repo_path.joinpath(project_path).resolve()) for project_path in mx_projects}
 cmake_projects_count = len(cmake_projects)
 print(f"Found {cmake_projects_count} projects:")
@@ -119,4 +195,4 @@ if failed_builds > 0:
 	print("Failed build paths:")
 	for project in failed:
 		print(project)
-	exit(1)
+	sys.exit(1)

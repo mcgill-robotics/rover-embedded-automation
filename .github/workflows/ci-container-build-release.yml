@@ -32,7 +32,7 @@ jobs:
         password: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Build container image
-      working-directory: ./CMake_CI_Build
+      working-directory: ./cmake_build_container
       run: docker build . -f Containerfile -t ghcr.io/mcgill-robotics/rover-embedded-runner:latest -t ghcr.io/mcgill-robotics/rover-embedded-runner:$SHORT_SHA
 
     - name: Push container image as latest
